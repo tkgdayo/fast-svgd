@@ -85,6 +85,55 @@ def test_components_can_be_composed_in_fast_svgd() -> None:
     assert np.mean(result.particles**2) < np.mean(initial**2)
 
 
+def test_run_result_exposes_practical_diagnostics() -> None:
+    initial = np.linspace(-3.0, 3.0, 12, dtype=float).reshape(-1, 1)
+    solver = SVGD(kernel=RBFKernel(bandwidth=1.0))
+
+    result = solver.run(
+        initial,
+        standard_normal_score,
+        n_steps=15,
+        step_size=0.05,
+        seed=8,
+        store_trajectory=True,
+    )
+
+    summary = result.summary()
+    series = result.diagnostic_series()
+
+    assert summary.n_steps == 15
+    assert summary.mean_final_displacement is not None
+    assert summary.mean_final_displacement > 0.0
+    assert summary.mean_path_length is not None
+    assert summary.final_particle_spread > 0.0
+    assert series.step.shape == (15,)
+    assert series.mean_score_norm.shape == (15,)
+    assert series.mean_step_displacement.shape == (15,)
+    assert series.particle_spread.shape == (15,)
+
+
+def test_run_result_summary_handles_missing_trajectory() -> None:
+    initial = np.linspace(-2.0, 2.0, 8, dtype=float).reshape(-1, 1)
+    solver = SVGD(kernel=RBFKernel(bandwidth=1.0))
+
+    result = solver.run(
+        initial,
+        standard_normal_score,
+        n_steps=5,
+        step_size=0.05,
+        seed=9,
+        store_trajectory=False,
+    )
+
+    summary = result.summary()
+    series = result.diagnostic_series()
+
+    assert summary.mean_final_displacement is None
+    assert summary.mean_path_length is None
+    assert series.mean_step_displacement.size == 0
+    assert series.particle_spread.size == 0
+
+
 def test_function_target_score_can_be_passed_explicitly() -> None:
     initial = np.linspace(-5.0, 5.0, 32, dtype=float).reshape(-1, 1)
     solver = SVGD(kernel=RBFKernel(bandwidth=2.0))

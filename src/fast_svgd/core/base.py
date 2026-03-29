@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, Protocol
+from typing import Any, Callable, Protocol
 
 import numpy as np
 from numpy.typing import NDArray
@@ -75,6 +75,14 @@ class StepDiagnostics:
     max_update_norm: float
     mean_particle_norm: float
 
+    def as_dict(self) -> dict[str, float]:
+        return {
+            "mean_score_norm": self.mean_score_norm,
+            "mean_update_norm": self.mean_update_norm,
+            "max_update_norm": self.max_update_norm,
+            "mean_particle_norm": self.mean_particle_norm,
+        }
+
 
 @dataclass(frozen=True)
 class StepResult:
@@ -90,3 +98,54 @@ class RunResult:
     particles: FloatArray
     diagnostics: tuple[StepDiagnostics, ...]
     trajectory: tuple[FloatArray, ...]
+
+    def summary(self) -> Any:
+        from ..diagnostics import summarize_run
+
+        return summarize_run(self)
+
+    def diagnostic_series(self) -> Any:
+        from ..diagnostics import build_diagnostic_series
+
+        return build_diagnostic_series(self)
+
+    def plot_diagnostics(self, *, axes: Any = None) -> Any:
+        from ..diagnostics import plot_diagnostics
+
+        return plot_diagnostics(self, axes=axes)
+
+    def plot_particles(
+        self,
+        *,
+        ax: Any = None,
+        step: int = -1,
+        dims: tuple[int, int] | None = None,
+        bins: int = 40,
+    ) -> Any:
+        from ..diagnostics import plot_particles
+
+        return plot_particles(
+            self,
+            ax=ax,
+            step=step,
+            dims=dims,
+            bins=bins,
+        )
+
+    def plot_particle_paths(
+        self,
+        *,
+        ax: Any = None,
+        dims: tuple[int, int] = (0, 1),
+        max_particles: int = 128,
+        alpha: float = 0.25,
+    ) -> Any:
+        from ..diagnostics import plot_particle_paths
+
+        return plot_particle_paths(
+            self,
+            ax=ax,
+            dims=dims,
+            max_particles=max_particles,
+            alpha=alpha,
+        )

@@ -45,6 +45,12 @@ For k-nearest-neighbor runs with a tree-based neighbor search backend:
 python -m pip install -e ".[dev,neighbors]"
 ```
 
+For plotting helpers:
+
+```bash
+python -m pip install -e ".[dev,plot]"
+```
+
 ## Quick Start
 
 ```python
@@ -77,6 +83,42 @@ from fast_svgd import SVGD
 solver = SVGD()
 result = solver.run(particles, my_score, n_steps=100, step_size=0.03, seed=0)
 ```
+
+## Diagnostics
+
+For practical runs, the most useful workflow is:
+
+1. run with `store_trajectory=True` when you want particle-motion plots
+2. inspect a compact summary
+3. pull step-wise arrays for dashboards or notebooks
+4. render a few standard plots directly from the result object
+
+```python
+result = solver.run(
+    particles,
+    target.score,
+    n_steps=150,
+    step_size=0.05,
+    seed=7,
+    store_trajectory=True,
+)
+
+summary = result.summary()
+series = result.diagnostic_series()
+
+print(summary.mean_score_norm_last)
+print(summary.mean_path_length)
+
+fig, axes = result.plot_diagnostics()
+result.plot_particles()
+result.plot_particle_paths()
+```
+
+These helpers focus on the signals that are usually worth checking in practice:
+
+- score magnitude and update magnitude
+- particle spread, step displacement, and cumulative path length
+- final particle snapshot and 2D particle paths
 
 ## Benchmark
 
@@ -261,6 +303,16 @@ The root package still re-exports the main classes, so user-facing imports stay 
 
 - `FunctionTarget`
 - `GaussianTarget`
+
+### Diagnostics
+
+- `RunSummary`
+- `DiagnosticSeries`
+- `RunResult.summary()`
+- `RunResult.diagnostic_series()`
+- `RunResult.plot_diagnostics()`
+- `RunResult.plot_particles()`
+- `RunResult.plot_particle_paths()`
 
 ### Preconditioners
 

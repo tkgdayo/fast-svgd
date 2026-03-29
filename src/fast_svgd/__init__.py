@@ -1,5 +1,6 @@
 from ._version import __version__
 from .base import (
+    DiagnosticSeries,
     FloatArray,
     HessianArray,
     HessianFunction,
@@ -8,11 +9,13 @@ from .base import (
     KernelEvaluation,
     SecondOrderTarget,
     RunResult,
+    RunSummary,
     ScoreFunction,
     StepDiagnostics,
     StepResult,
     Target,
 )
+from .diagnostics import plot_diagnostics, plot_particle_paths, plot_particles
 from .interactions import FullBatchInteraction, KNNInteraction, RandomBatchInteraction
 from .kernels import IMQKernel, MatrixRBFKernel, RBFKernel
 from .noise import GaussianNoise, NoNoise, SPOSNoise
@@ -32,6 +35,7 @@ from .targets import FunctionTarget, GaussianTarget
 
 __all__ = [
     "__version__",
+    "DiagnosticSeries",
     "DiagonalPreconditioner",
     "FastSVGD",
     "FloatArray",
@@ -56,6 +60,7 @@ __all__ = [
     "RandomBatchInteraction",
     "RandomBatchSVGD",
     "RunResult",
+    "RunSummary",
     "SecondOrderTarget",
     "SPOS",
     "SPOSNoise",
@@ -66,4 +71,7 @@ __all__ = [
     "StepDiagnostics",
     "StepResult",
     "Target",
+    "plot_diagnostics",
+    "plot_particle_paths",
+    "plot_particles",
 ]

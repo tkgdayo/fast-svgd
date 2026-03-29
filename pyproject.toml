@@ -41,6 +41,9 @@ dependencies = [
 neighbors = [
   "scipy>=1.11",
 ]
+plot = [
+  "matplotlib>=3.8",
+]
 dev = [
   "build>=1.2",
   "pytest>=8",

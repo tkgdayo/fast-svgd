@@ -15,8 +15,10 @@ from .core.base import (
     StepResult,
     Target,
 )
+from .diagnostics import DiagnosticSeries, RunSummary
 
 __all__ = [
+    "DiagnosticSeries",
     "FloatArray",
     "HessianArray",
     "HessianFunction",
@@ -27,6 +29,7 @@ __all__ = [
     "NoiseInjector",
     "Preconditioner",
     "RunResult",
+    "RunSummary",
     "ScoreFunction",
     "SecondOrderTarget",
     "StepDiagnostics",
