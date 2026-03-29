@@ -37,6 +37,8 @@ ANISOTROPIC_PRECISION = np.diag([1.0, 25.0])
 class TrialSummary:
     mean: float
     variance: float
+    mean_final_displacement: float
+    mean_path_length: float
     wall_time_s: float
 
 
@@ -45,6 +47,8 @@ class CurvatureTrialSummary:
     energy: float
     variance_x1: float
     variance_x2: float
+    mean_final_displacement: float
+    mean_path_length: float
     wall_time_s: float
 
 
@@ -65,6 +69,18 @@ def anisotropic_gaussian_score(particles: np.ndarray) -> np.ndarray:
 
 def anisotropic_gaussian_hessian(particles: np.ndarray) -> np.ndarray:
     return np.repeat((-ANISOTROPIC_PRECISION)[None, :, :], particles.shape[0], axis=0)
+
+
+def particle_motion_metrics(trajectory: tuple[np.ndarray, ...]) -> tuple[float, float]:
+    if len(trajectory) < 2:
+        return 0.0, 0.0
+
+    stacked = np.stack(trajectory, axis=0)
+    step_deltas = stacked[1:] - stacked[:-1]
+    step_lengths = np.linalg.norm(step_deltas, axis=2)
+    path_lengths = np.sum(step_lengths, axis=0)
+    final_displacements = np.linalg.norm(stacked[-1] - stacked[0], axis=1)
+    return float(np.mean(final_displacements)), float(np.mean(path_lengths))
 
 
 def initial_particles(
@@ -163,12 +179,16 @@ def run_trial(method_name: str, n_particles: int, seed: int) -> TrialSummary:
         n_steps=config.steps,
         step_size=config.step_size,
         seed=seed,
+        store_trajectory=True,
     )
     wall_time_s = time.perf_counter() - start
     final_particles = result.particles[:, 0]
+    mean_final_displacement, mean_path_length = particle_motion_metrics(result.trajectory)
     return TrialSummary(
         mean=float(np.mean(final_particles)),
         variance=float(np.var(final_particles)),
+        mean_final_displacement=mean_final_displacement,
+        mean_path_length=mean_path_length,
         wall_time_s=wall_time_s,
     )
 
@@ -178,6 +198,10 @@ def summarize_quality(method_name: str) -> TrialSummary:
     return TrialSummary(
         mean=statistics.fmean(trial.mean for trial in trials),
         variance=statistics.fmean(trial.variance for trial in trials),
+        mean_final_displacement=statistics.fmean(
+            trial.mean_final_displacement for trial in trials
+        ),
+        mean_path_length=statistics.fmean(trial.mean_path_length for trial in trials),
         wall_time_s=statistics.fmean(trial.wall_time_s for trial in trials),
     )
 
@@ -212,6 +236,7 @@ def run_anisotropic_trial(method_name: str, seed: int) -> CurvatureTrialSummary:
             n_steps=config.steps,
             step_size=config.step_size,
             seed=seed,
+            store_trajectory=True,
         )
     else:
         result = solver.run(
@@ -220,13 +245,17 @@ def run_anisotropic_trial(method_name: str, seed: int) -> CurvatureTrialSummary:
             n_steps=config.steps,
             step_size=config.step_size,
             seed=seed,
+            store_trajectory=True,
         )
     wall_time_s = time.perf_counter() - start
     final_particles = result.particles
+    mean_final_displacement, mean_path_length = particle_motion_metrics(result.trajectory)
     return CurvatureTrialSummary(
         energy=anisotropic_energy(final_particles),
         variance_x1=float(np.var(final_particles[:, 0])),
         variance_x2=float(np.var(final_particles[:, 1])),
+        mean_final_displacement=mean_final_displacement,
+        mean_path_length=mean_path_length,
         wall_time_s=wall_time_s,
     )
 
@@ -237,6 +266,10 @@ def summarize_anisotropic(method_name: str) -> CurvatureTrialSummary:
         energy=statistics.fmean(trial.energy for trial in trials),
         variance_x1=statistics.fmean(trial.variance_x1 for trial in trials),
         variance_x2=statistics.fmean(trial.variance_x2 for trial in trials),
+        mean_final_displacement=statistics.fmean(
+            trial.mean_final_displacement for trial in trials
+        ),
+        mean_path_length=statistics.fmean(trial.mean_path_length for trial in trials),
         wall_time_s=statistics.fmean(trial.wall_time_s for trial in trials),
     )
 
@@ -281,24 +314,33 @@ def render_markdown() -> str:
         f"- steps: `{STANDARD_NORMAL_STEPS}`",
         f"- step size: `{STANDARD_NORMAL_STEP_SIZE}`",
         "",
-        "| Method | Final mean | Final variance | Mean wall time (s) |",
-        "| --- | ---: | ---: | ---: |",
+        (
+            "| Method | Final mean | Final variance | Mean final displacement | "
+            "Mean path length | Mean wall time (s) |"
+        ),
+        "| --- | ---: | ---: | ---: | ---: | ---: |",
         (
             "| `SVGD` | "
             f"`{quality_rows['SVGD'].mean:.3f}` | "
             f"`{quality_rows['SVGD'].variance:.3f}` | "
+            f"`{quality_rows['SVGD'].mean_final_displacement:.3f}` | "
+            f"`{quality_rows['SVGD'].mean_path_length:.3f}` | "
             f"`{quality_rows['SVGD'].wall_time_s:.3f}` |"
         ),
         (
             "| `RandomBatchSVGD` | "
             f"`{quality_rows['RandomBatchSVGD'].mean:.3f}` | "
             f"`{quality_rows['RandomBatchSVGD'].variance:.3f}` | "
+            f"`{quality_rows['RandomBatchSVGD'].mean_final_displacement:.3f}` | "
+            f"`{quality_rows['RandomBatchSVGD'].mean_path_length:.3f}` | "
             f"`{quality_rows['RandomBatchSVGD'].wall_time_s:.3f}` |"
         ),
         (
             "| `SPOS` | "
             f"`{quality_rows['SPOS'].mean:.3f}` | "
             f"`{quality_rows['SPOS'].variance:.3f}` | "
+            f"`{quality_rows['SPOS'].mean_final_displacement:.3f}` | "
+            f"`{quality_rows['SPOS'].mean_path_length:.3f}` | "
             f"`{quality_rows['SPOS'].wall_time_s:.3f}` |"
         ),
         "",
@@ -324,9 +366,13 @@ def render_markdown() -> str:
             f"- initialization: `Uniform({ANISOTROPIC_INIT_MIN}, {ANISOTROPIC_INIT_MAX})^2`",
             "- metric-aware methods are benchmarked on the same target so the stiff axis is visible",
             "- smaller Mahalanobis energy is better; the target expectation is `2.0`",
+            "- motion metrics are Euclidean norms averaged over particles",
             "",
-            "| Method | Steps | Var(x1) | Var(x2) | Mahalanobis energy | Mean wall time (s) |",
-            "| --- | ---: | ---: | ---: | ---: | ---: |",
+            (
+                "| Method | Steps | Var(x1) | Var(x2) | Mean final displacement | "
+                "Mean path length | Mahalanobis energy | Mean wall time (s) |"
+            ),
+            "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
         ]
     )
     for method_name in (
@@ -342,6 +388,8 @@ def render_markdown() -> str:
             f"`{anisotropic_configs[method_name].steps}` | "
             f"`{summary.variance_x1:.3f}` | "
             f"`{summary.variance_x2:.3f}` | "
+            f"`{summary.mean_final_displacement:.3f}` | "
+            f"`{summary.mean_path_length:.3f}` | "
             f"`{summary.energy:.3f}` | "
             f"`{summary.wall_time_s:.3f}` |"
         )
