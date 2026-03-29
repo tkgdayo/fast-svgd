@@ -34,12 +34,23 @@ ANISOTROPIC_PARTICLES = 64
 ANISOTROPIC_INIT_MIN = -4.0
 ANISOTROPIC_INIT_MAX = 4.0
 ANISOTROPIC_PRECISION = np.diag([1.0, 25.0])
-STANDARD_NORMAL_TARGET = GaussianTarget(mean=np.zeros(1), precision=np.eye(1))
-ANISOTROPIC_TARGET = GaussianTarget(mean=np.zeros(2), precision=ANISOTROPIC_PRECISION)
+STANDARD_NORMAL_MEAN = np.zeros(1)
+STANDARD_NORMAL_COVARIANCE = np.eye(1)
+ANISOTROPIC_MEAN = np.zeros(2)
+ANISOTROPIC_COVARIANCE = np.diag([1.0, 0.04])
+STANDARD_NORMAL_TARGET = GaussianTarget(
+    mean=STANDARD_NORMAL_MEAN,
+    covariance=STANDARD_NORMAL_COVARIANCE,
+)
+ANISOTROPIC_TARGET = GaussianTarget(
+    mean=ANISOTROPIC_MEAN,
+    precision=ANISOTROPIC_PRECISION,
+)
 
 
 @dataclass(frozen=True)
 class TrialSummary:
+    target_discrepancy: float
     mean: float
     variance: float
     mean_final_displacement: float
@@ -49,6 +60,7 @@ class TrialSummary:
 
 @dataclass(frozen=True)
 class CurvatureTrialSummary:
+    target_discrepancy: float
     energy: float
     variance_x1: float
     variance_x2: float
@@ -63,6 +75,7 @@ class SolverConfig:
     steps: int
     step_size: float
 
+
 def particle_motion_metrics(trajectory: tuple[np.ndarray, ...]) -> tuple[float, float]:
     if len(trajectory) < 2:
         return 0.0, 0.0
@@ -73,6 +86,23 @@ def particle_motion_metrics(trajectory: tuple[np.ndarray, ...]) -> tuple[float, 
     path_lengths = np.sum(step_lengths, axis=0)
     final_displacements = np.linalg.norm(stacked[-1] - stacked[0], axis=1)
     return float(np.mean(final_displacements)), float(np.mean(path_lengths))
+
+
+def gaussian_moment_discrepancy(
+    particles: np.ndarray,
+    *,
+    target_mean: np.ndarray,
+    target_covariance: np.ndarray,
+) -> float:
+    empirical_mean = np.mean(particles, axis=0)
+    centered = particles - empirical_mean[None, :]
+    empirical_covariance = centered.T @ centered / particles.shape[0]
+    mean_error = np.linalg.norm(empirical_mean - target_mean)
+    covariance_error = np.linalg.norm(
+        empirical_covariance - target_covariance,
+        ord="fro",
+    )
+    return float(np.hypot(mean_error, covariance_error))
 
 
 def initial_particles(
@@ -195,11 +225,16 @@ def run_trial(method_name: str, n_particles: int, seed: int) -> TrialSummary:
         store_trajectory=True,
     )
     wall_time_s = time.perf_counter() - start
-    final_particles = result.particles[:, 0]
+    final_particles = result.particles
     mean_final_displacement, mean_path_length = particle_motion_metrics(result.trajectory)
     return TrialSummary(
-        mean=float(np.mean(final_particles)),
-        variance=float(np.var(final_particles)),
+        target_discrepancy=gaussian_moment_discrepancy(
+            final_particles,
+            target_mean=STANDARD_NORMAL_MEAN,
+            target_covariance=STANDARD_NORMAL_COVARIANCE,
+        ),
+        mean=float(np.mean(final_particles[:, 0])),
+        variance=float(np.var(final_particles[:, 0])),
         mean_final_displacement=mean_final_displacement,
         mean_path_length=mean_path_length,
         wall_time_s=wall_time_s,
@@ -209,6 +244,9 @@ def run_trial(method_name: str, n_particles: int, seed: int) -> TrialSummary:
 def summarize_quality(method_name: str) -> TrialSummary:
     trials = [run_trial(method_name, STANDARD_NORMAL_PARTICLES, seed) for seed in SEEDS]
     return TrialSummary(
+        target_discrepancy=statistics.fmean(
+            trial.target_discrepancy for trial in trials
+        ),
         mean=statistics.fmean(trial.mean for trial in trials),
         variance=statistics.fmean(trial.variance for trial in trials),
         mean_final_displacement=statistics.fmean(
@@ -252,6 +290,11 @@ def run_anisotropic_trial(method_name: str, seed: int) -> CurvatureTrialSummary:
     final_particles = result.particles
     mean_final_displacement, mean_path_length = particle_motion_metrics(result.trajectory)
     return CurvatureTrialSummary(
+        target_discrepancy=gaussian_moment_discrepancy(
+            final_particles,
+            target_mean=ANISOTROPIC_MEAN,
+            target_covariance=ANISOTROPIC_COVARIANCE,
+        ),
         energy=anisotropic_energy(final_particles),
         variance_x1=float(np.var(final_particles[:, 0])),
         variance_x2=float(np.var(final_particles[:, 1])),
@@ -264,6 +307,9 @@ def run_anisotropic_trial(method_name: str, seed: int) -> CurvatureTrialSummary:
 def summarize_anisotropic(method_name: str) -> CurvatureTrialSummary:
     trials = [run_anisotropic_trial(method_name, seed) for seed in SEEDS]
     return CurvatureTrialSummary(
+        target_discrepancy=statistics.fmean(
+            trial.target_discrepancy for trial in trials
+        ),
         energy=statistics.fmean(trial.energy for trial in trials),
         variance_x1=statistics.fmean(trial.variance_x1 for trial in trials),
         variance_x2=statistics.fmean(trial.variance_x2 for trial in trials),
@@ -317,41 +363,45 @@ def render_markdown() -> str:
         f"- step size: `{STANDARD_NORMAL_STEP_SIZE}`",
         "",
         (
-            "| Method | Final mean | Final variance | Mean final displacement | "
-            "Mean path length | Mean wall time (s) |"
+            "| Method | Target discrepancy | Mean wall time (s) | Final mean | "
+            "Final variance | Mean final displacement | Mean path length |"
         ),
-        "| --- | ---: | ---: | ---: | ---: | ---: |",
+        "| --- | ---: | ---: | ---: | ---: | ---: | ---: |",
         (
             "| `SVGD` | "
+            f"`{quality_rows['SVGD'].target_discrepancy:.3f}` | "
+            f"`{quality_rows['SVGD'].wall_time_s:.3f}` | "
             f"`{quality_rows['SVGD'].mean:.3f}` | "
             f"`{quality_rows['SVGD'].variance:.3f}` | "
             f"`{quality_rows['SVGD'].mean_final_displacement:.3f}` | "
-            f"`{quality_rows['SVGD'].mean_path_length:.3f}` | "
-            f"`{quality_rows['SVGD'].wall_time_s:.3f}` |"
+            f"`{quality_rows['SVGD'].mean_path_length:.3f}` |"
         ),
         (
             "| `RandomBatchSVGD` | "
+            f"`{quality_rows['RandomBatchSVGD'].target_discrepancy:.3f}` | "
+            f"`{quality_rows['RandomBatchSVGD'].wall_time_s:.3f}` | "
             f"`{quality_rows['RandomBatchSVGD'].mean:.3f}` | "
             f"`{quality_rows['RandomBatchSVGD'].variance:.3f}` | "
             f"`{quality_rows['RandomBatchSVGD'].mean_final_displacement:.3f}` | "
-            f"`{quality_rows['RandomBatchSVGD'].mean_path_length:.3f}` | "
-            f"`{quality_rows['RandomBatchSVGD'].wall_time_s:.3f}` |"
+            f"`{quality_rows['RandomBatchSVGD'].mean_path_length:.3f}` |"
         ),
         (
             "| `KNNSVGD` | "
+            f"`{quality_rows['KNNSVGD'].target_discrepancy:.3f}` | "
+            f"`{quality_rows['KNNSVGD'].wall_time_s:.3f}` | "
             f"`{quality_rows['KNNSVGD'].mean:.3f}` | "
             f"`{quality_rows['KNNSVGD'].variance:.3f}` | "
             f"`{quality_rows['KNNSVGD'].mean_final_displacement:.3f}` | "
-            f"`{quality_rows['KNNSVGD'].mean_path_length:.3f}` | "
-            f"`{quality_rows['KNNSVGD'].wall_time_s:.3f}` |"
+            f"`{quality_rows['KNNSVGD'].mean_path_length:.3f}` |"
         ),
         (
             "| `SPOS` | "
+            f"`{quality_rows['SPOS'].target_discrepancy:.3f}` | "
+            f"`{quality_rows['SPOS'].wall_time_s:.3f}` | "
             f"`{quality_rows['SPOS'].mean:.3f}` | "
             f"`{quality_rows['SPOS'].variance:.3f}` | "
             f"`{quality_rows['SPOS'].mean_final_displacement:.3f}` | "
-            f"`{quality_rows['SPOS'].mean_path_length:.3f}` | "
-            f"`{quality_rows['SPOS'].wall_time_s:.3f}` |"
+            f"`{quality_rows['SPOS'].mean_path_length:.3f}` |"
         ),
         "",
         (
@@ -383,10 +433,11 @@ def render_markdown() -> str:
             "- motion metrics are Euclidean norms averaged over particles",
             "",
             (
-                "| Method | Steps | Var(x1) | Var(x2) | Mean final displacement | "
-                "Mean path length | Mahalanobis energy | Mean wall time (s) |"
+                "| Method | Steps | Target discrepancy | Mean wall time (s) | "
+                "Var(x1) | Var(x2) | Mean final displacement | Mean path length | "
+                "Mahalanobis energy |"
             ),
-            "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+            "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
         ]
     )
     for method_name in (
@@ -400,12 +451,13 @@ def render_markdown() -> str:
         lines.append(
             f"| `{method_name}` | "
             f"`{anisotropic_configs[method_name].steps}` | "
+            f"`{summary.target_discrepancy:.3f}` | "
+            f"`{summary.wall_time_s:.3f}` | "
             f"`{summary.variance_x1:.3f}` | "
             f"`{summary.variance_x2:.3f}` | "
             f"`{summary.mean_final_displacement:.3f}` | "
             f"`{summary.mean_path_length:.3f}` | "
-            f"`{summary.energy:.3f}` | "
-            f"`{summary.wall_time_s:.3f}` |"
+            f"`{summary.energy:.3f}` |"
         )
 
     return "\n".join(lines)
