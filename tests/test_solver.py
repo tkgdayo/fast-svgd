@@ -128,10 +128,14 @@ def test_run_result_summary_handles_missing_trajectory() -> None:
     summary = result.summary()
     series = result.diagnostic_series()
 
-    assert summary.mean_final_displacement is None
-    assert summary.mean_path_length is None
-    assert series.mean_step_displacement.size == 0
-    assert series.particle_spread.size == 0
+    assert summary.mean_final_displacement is not None
+    assert summary.mean_final_displacement > 0.0
+    assert summary.mean_path_length is not None
+    assert summary.mean_path_length > 0.0
+    assert series.mean_step_displacement.shape == (5,)
+    assert series.particle_spread.shape == (5,)
+    assert not result.has_trajectory
+    np.testing.assert_allclose(result.initial_particles, initial)
 
 
 def test_function_target_score_can_be_passed_explicitly() -> None:

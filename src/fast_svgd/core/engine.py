@@ -52,6 +52,7 @@ def _as_hessian_array(hessians: HessianArray, shape: tuple[int, int]) -> Hessian
 
 
 def _build_diagnostics(
+    previous_particles: FloatArray,
     particles: FloatArray,
     scores: FloatArray,
     update: FloatArray,
@@ -59,11 +60,17 @@ def _build_diagnostics(
     score_norms = np.linalg.norm(scores, axis=1)
     update_norms = np.linalg.norm(update, axis=1)
     particle_norms = np.linalg.norm(particles, axis=1)
+    centered_particles = particles - np.mean(particles, axis=0, keepdims=True)
+    particle_spread = np.linalg.norm(centered_particles, axis=1)
+    step_displacement = np.linalg.norm(particles - previous_particles, axis=1)
     return StepDiagnostics(
         mean_score_norm=float(np.mean(score_norms)),
         mean_update_norm=float(np.mean(update_norms)),
         max_update_norm=float(np.max(update_norms)),
         mean_particle_norm=float(np.mean(particle_norms)),
+        particle_spread=float(np.mean(particle_spread)),
+        mean_step_displacement=float(np.mean(step_displacement)),
+        max_step_displacement=float(np.max(step_displacement)),
     )
 
 
@@ -213,7 +220,12 @@ class FastSVGD:
             raise ValueError("noise injector must preserve the particle shape.")
 
         next_particles = particles_array + step_size * drift + noise
-        diagnostics = _build_diagnostics(next_particles, scores, drift)
+        diagnostics = _build_diagnostics(
+            particles_array,
+            next_particles,
+            scores,
+            drift,
+        )
         return StepResult(
             particles=next_particles,
             update=drift,
@@ -256,6 +268,7 @@ class FastSVGD:
                 trajectory.append(current_particles.copy())
 
         return RunResult(
+            initial_particles=_as_particle_array(particles).copy(),
             particles=current_particles,
             diagnostics=tuple(diagnostics),
             trajectory=tuple(trajectory),

@@ -88,10 +88,11 @@ result = solver.run(particles, my_score, n_steps=100, step_size=0.03, seed=0)
 
 For practical runs, the most useful workflow is:
 
-1. run with `store_trajectory=True` when you want particle-motion plots
+1. run the solver with your current settings
 2. inspect a compact summary
 3. pull step-wise arrays for dashboards or notebooks
-4. render a few standard plots directly from the result object
+4. turn on `store_trajectory=True` when you want full path-over-time plots
+5. render a few standard plots directly from the result object
 
 ```python
 result = solver.run(
@@ -100,7 +101,6 @@ result = solver.run(
     n_steps=150,
     step_size=0.05,
     seed=7,
-    store_trajectory=True,
 )
 
 summary = result.summary()
@@ -113,6 +113,10 @@ fig, axes = result.plot_diagnostics()
 result.plot_particles()
 result.plot_particle_paths()
 ```
+
+`summary()` and `diagnostic_series()` work even without stored trajectories.
+`plot_particle_paths()` also falls back to an initial-to-final displacement view.
+If you want the full path through every step, run with `store_trajectory=True`.
 
 These helpers focus on the signals that are usually worth checking in practice:
 

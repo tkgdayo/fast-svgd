@@ -148,7 +148,12 @@ class SteinVariationalNewton:
         drift = self._local_newton_direction(particles_array, scores, hessians)
         noise = np.zeros_like(particles_array)
         next_particles = particles_array + step_size * drift
-        diagnostics = _build_diagnostics(next_particles, scores, drift)
+        diagnostics = _build_diagnostics(
+            particles_array,
+            next_particles,
+            scores,
+            drift,
+        )
         return StepResult(
             particles=next_particles,
             update=drift,
@@ -193,6 +198,7 @@ class SteinVariationalNewton:
                 trajectory.append(current_particles.copy())
 
         return RunResult(
+            initial_particles=_as_particle_array(particles).copy(),
             particles=current_particles,
             diagnostics=tuple(diagnostics),
             trajectory=tuple(trajectory),

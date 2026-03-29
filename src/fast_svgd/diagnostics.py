@@ -29,22 +29,18 @@ def _trajectory_stack(result: RunResult) -> FloatArray:
 
 
 def _motion_arrays(result: RunResult) -> tuple[FloatArray, FloatArray, FloatArray, FloatArray]:
-    if len(result.trajectory) < 2:
-        return (
-            _empty_float_array(),
-            _empty_float_array(),
-            _empty_float_array(),
-            _empty_float_array(),
-        )
-
-    stacked = _trajectory_stack(result)
-    deltas = stacked[1:] - stacked[:-1]
-    step_lengths = np.linalg.norm(deltas, axis=2)
-    mean_step_displacement = np.mean(step_lengths, axis=1)
-    max_step_displacement = np.max(step_lengths, axis=1)
+    diagnostics = result.diagnostics
+    mean_step_displacement = np.array(
+        [item.mean_step_displacement for item in diagnostics],
+        dtype=float,
+    )
+    max_step_displacement = np.array(
+        [item.max_step_displacement for item in diagnostics],
+        dtype=float,
+    )
     cumulative_mean_path_length = np.cumsum(mean_step_displacement)
     particle_spread = np.array(
-        [_particle_spread(state) for state in stacked[1:]],
+        [item.particle_spread for item in diagnostics],
         dtype=float,
     )
     return (
@@ -73,6 +69,10 @@ def _particles_for_step(result: RunResult, step: int) -> FloatArray:
             "Selecting a specific step requires store_trajectory=True when running the solver."
         )
     return np.asarray(result.trajectory[step], dtype=float)
+
+
+def _initial_to_final_displacement(result: RunResult) -> FloatArray:
+    return result.particles - result.initial_particles
 
 
 @dataclass(frozen=True)
@@ -170,20 +170,19 @@ def build_diagnostic_series(result: RunResult) -> DiagnosticSeries:
 def summarize_run(result: RunResult) -> RunSummary:
     last = result.diagnostics[-1] if result.diagnostics else None
     final_particle_spread = _particle_spread(result.particles)
-
-    mean_final_displacement: float | None = None
-    max_final_displacement: float | None = None
-    mean_path_length: float | None = None
-    max_path_length: float | None = None
-    if len(result.trajectory) >= 2:
-        stacked = _trajectory_stack(result)
-        step_lengths = np.linalg.norm(stacked[1:] - stacked[:-1], axis=2)
-        path_lengths = np.sum(step_lengths, axis=0)
-        final_displacements = np.linalg.norm(stacked[-1] - stacked[0], axis=1)
-        mean_final_displacement = float(np.mean(final_displacements))
-        max_final_displacement = float(np.max(final_displacements))
-        mean_path_length = float(np.mean(path_lengths))
-        max_path_length = float(np.max(path_lengths))
+    final_displacements = np.linalg.norm(_initial_to_final_displacement(result), axis=1)
+    mean_final_displacement = float(np.mean(final_displacements))
+    max_final_displacement = float(np.max(final_displacements))
+    if result.diagnostics:
+        mean_path_length = float(
+            np.sum([item.mean_step_displacement for item in result.diagnostics])
+        )
+        max_path_length = float(
+            np.sum([item.max_step_displacement for item in result.diagnostics])
+        )
+    else:
+        mean_path_length = 0.0
+        max_path_length = 0.0
 
     return RunSummary(
         n_steps=len(result.diagnostics),
@@ -283,9 +282,38 @@ def plot_particle_paths(
     alpha: float = 0.25,
 ) -> Any:
     plt = _require_matplotlib()
-    stacked = _trajectory_stack(result)
-    if stacked.shape[2] < 2:
-        raise ValueError("Particle path plots require at least two particle dimensions.")
+    if result.has_trajectory:
+        stacked = _trajectory_stack(result)
+    else:
+        stacked = np.stack((result.initial_particles, result.particles), axis=0)
+
+    if stacked.shape[2] == 1:
+        if ax is None:
+            fig, ax = plt.subplots(figsize=(7, 4))
+        else:
+            fig = ax.figure
+
+        particle_count = stacked.shape[1]
+        keep = min(max_particles, particle_count)
+        particle_indices = np.linspace(0, particle_count - 1, num=keep, dtype=int)
+        x = np.arange(stacked.shape[0], dtype=float)
+
+        for particle_index in particle_indices:
+            ax.plot(
+                x,
+                stacked[:, particle_index, 0],
+                alpha=alpha,
+                linewidth=1.0,
+            )
+
+        ax.set_xlabel("step")
+        ax.set_ylabel("particle value")
+        ax.set_title(
+            "Particle Paths" if result.has_trajectory else "Initial-to-final particle displacement"
+        )
+        ax.grid(alpha=0.2)
+        fig.tight_layout()
+        return fig, ax
 
     d0, d1 = dims
     if d0 == d1:
@@ -326,7 +354,9 @@ def plot_particle_paths(
     )
     ax.set_xlabel(f"dim {d0}")
     ax.set_ylabel(f"dim {d1}")
-    ax.set_title("Particle Paths")
+    ax.set_title(
+        "Particle Paths" if result.has_trajectory else "Initial-to-final particle displacement"
+    )
     ax.grid(alpha=0.2)
     ax.legend()
     fig.tight_layout()

@@ -74,6 +74,9 @@ class StepDiagnostics:
     mean_update_norm: float
     max_update_norm: float
     mean_particle_norm: float
+    particle_spread: float
+    mean_step_displacement: float
+    max_step_displacement: float
 
     def as_dict(self) -> dict[str, float]:
         return {
@@ -81,6 +84,9 @@ class StepDiagnostics:
             "mean_update_norm": self.mean_update_norm,
             "max_update_norm": self.max_update_norm,
             "mean_particle_norm": self.mean_particle_norm,
+            "particle_spread": self.particle_spread,
+            "mean_step_displacement": self.mean_step_displacement,
+            "max_step_displacement": self.max_step_displacement,
         }
 
 
@@ -95,9 +101,14 @@ class StepResult:
 
 @dataclass(frozen=True)
 class RunResult:
+    initial_particles: FloatArray
     particles: FloatArray
     diagnostics: tuple[StepDiagnostics, ...]
     trajectory: tuple[FloatArray, ...]
+
+    @property
+    def has_trajectory(self) -> bool:
+        return len(self.trajectory) >= 2
 
     def summary(self) -> Any:
         from ..diagnostics import summarize_run
