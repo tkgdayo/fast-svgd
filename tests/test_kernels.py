@@ -1,6 +1,6 @@
 import numpy as np
 
-from fast_svgd import IMQKernel, RBFKernel
+from fast_svgd import IMQKernel, MatrixRBFKernel, RBFKernel
 
 
 def test_rbf_kernel_self_interaction_has_unit_diagonal() -> None:
@@ -21,4 +21,22 @@ def test_imq_kernel_returns_positive_values() -> None:
     assert evaluation.matrix.shape == (2, 1)
     assert evaluation.grad_source.shape == (2, 1, 2)
     assert np.all(evaluation.matrix > 0.0)
+
+
+def test_matrix_rbf_kernel_returns_operator_and_divergence() -> None:
+    particles = np.array([[0.0, 0.0], [1.0, -1.0]], dtype=float)
+    evaluation = MatrixRBFKernel(metric=np.array([1.0, 4.0]), bandwidth=2.0).evaluate(
+        particles,
+        particles,
+    )
+
+    assert evaluation.matrix is None
+    assert evaluation.operator is not None
+    assert evaluation.operator.shape == (2, 2, 2, 2)
+    assert evaluation.grad_source.shape == (2, 2, 2)
+    np.testing.assert_allclose(
+        evaluation.operator[0, 0],
+        np.diag([1.0, 4.0]),
+    )
+    np.testing.assert_allclose(evaluation.grad_source[0, 0], np.zeros(2))
 

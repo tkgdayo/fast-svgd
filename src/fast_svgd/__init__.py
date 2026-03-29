@@ -1,6 +1,8 @@
 from ._version import __version__
 from .base import (
     FloatArray,
+    HessianArray,
+    HessianFunction,
     InteractionBlock,
     KernelEvaluation,
     RunResult,
@@ -9,10 +11,19 @@ from .base import (
     StepResult,
 )
 from .interactions import FullBatchInteraction, RandomBatchInteraction
-from .kernels import IMQKernel, RBFKernel
+from .kernels import IMQKernel, MatrixRBFKernel, RBFKernel
 from .noise import GaussianNoise, NoNoise, SPOSNoise
 from .preconditioners import DiagonalPreconditioner, IdentityPreconditioner
-from .solver import FastSVGD, RBMSVGD, RandomBatchSVGD, SPOS, SVGD
+from .solver import (
+    FastSVGD,
+    MatrixSVGD,
+    RBMSVGD,
+    RandomBatchSVGD,
+    SPOS,
+    SVGD,
+    SVN,
+    SteinVariationalNewton,
+)
 
 __all__ = [
     "__version__",
@@ -21,10 +32,14 @@ __all__ = [
     "FloatArray",
     "FullBatchInteraction",
     "GaussianNoise",
+    "HessianArray",
+    "HessianFunction",
     "IMQKernel",
     "IdentityPreconditioner",
     "InteractionBlock",
     "KernelEvaluation",
+    "MatrixRBFKernel",
+    "MatrixSVGD",
     "NoNoise",
     "RBMSVGD",
     "RBFKernel",
@@ -34,8 +49,9 @@ __all__ = [
     "SPOS",
     "SPOSNoise",
     "SVGD",
+    "SVN",
     "ScoreFunction",
+    "SteinVariationalNewton",
     "StepDiagnostics",
     "StepResult",
 ]
-

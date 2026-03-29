@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from .base import FloatArray, KernelEvaluation
+from ..core.base import FloatArray, KernelEvaluation
 
 _MIN_BANDWIDTH = 1e-12
 
@@ -57,7 +57,12 @@ class RBFKernel:
 
         matrix = np.exp(-squared_distance / bandwidth)
         grad_source = (-2.0 / bandwidth) * diff * matrix[:, :, None]
-        return KernelEvaluation(matrix=matrix, grad_source=grad_source, bandwidth=bandwidth)
+        return KernelEvaluation(
+            matrix=matrix,
+            grad_source=grad_source,
+            operator=None,
+            bandwidth=bandwidth,
+        )
 
 
 @dataclass(frozen=True)
@@ -88,5 +93,10 @@ class IMQKernel:
             * np.power(base, self.beta - 1.0)[:, :, None]
             * diff
         )
-        return KernelEvaluation(matrix=matrix, grad_source=grad_source, bandwidth=None)
+        return KernelEvaluation(
+            matrix=matrix,
+            grad_source=grad_source,
+            operator=None,
+            bandwidth=None,
+        )
 
