@@ -4,18 +4,22 @@ from .base import (
     HessianArray,
     HessianFunction,
     InteractionBlock,
+    InteractionApproximator,
     KernelEvaluation,
+    SecondOrderTarget,
     RunResult,
     ScoreFunction,
     StepDiagnostics,
     StepResult,
+    Target,
 )
-from .interactions import FullBatchInteraction, RandomBatchInteraction
+from .interactions import FullBatchInteraction, KNNInteraction, RandomBatchInteraction
 from .kernels import IMQKernel, MatrixRBFKernel, RBFKernel
 from .noise import GaussianNoise, NoNoise, SPOSNoise
 from .preconditioners import DiagonalPreconditioner, IdentityPreconditioner
 from .solver import (
     FastSVGD,
+    KNNSVGD,
     MatrixSVGD,
     RBMSVGD,
     RandomBatchSVGD,
@@ -24,19 +28,25 @@ from .solver import (
     SVN,
     SteinVariationalNewton,
 )
+from .targets import FunctionTarget, GaussianTarget
 
 __all__ = [
     "__version__",
     "DiagonalPreconditioner",
     "FastSVGD",
     "FloatArray",
+    "FunctionTarget",
     "FullBatchInteraction",
     "GaussianNoise",
+    "GaussianTarget",
     "HessianArray",
     "HessianFunction",
     "IMQKernel",
     "IdentityPreconditioner",
+    "InteractionApproximator",
     "InteractionBlock",
+    "KNNInteraction",
+    "KNNSVGD",
     "KernelEvaluation",
     "MatrixRBFKernel",
     "MatrixSVGD",
@@ -46,6 +56,7 @@ __all__ = [
     "RandomBatchInteraction",
     "RandomBatchSVGD",
     "RunResult",
+    "SecondOrderTarget",
     "SPOS",
     "SPOSNoise",
     "SVGD",
@@ -54,4 +65,5 @@ __all__ = [
     "SteinVariationalNewton",
     "StepDiagnostics",
     "StepResult",
+    "Target",
 ]

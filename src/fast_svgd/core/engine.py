@@ -19,6 +19,7 @@ from .base import (
     ScoreFunction,
     StepDiagnostics,
     StepResult,
+    Target,
 )
 
 
@@ -49,6 +50,17 @@ def _as_hessian_array(hessians: HessianArray, shape: tuple[int, int]) -> Hessian
             f"{expected_shape}, got {array.shape}."
         )
     return array
+
+
+def _resolve_score_function(
+    score_function: ScoreFunction | None,
+    target: Target | None,
+) -> ScoreFunction:
+    if score_function is not None:
+        return score_function
+    if target is None:
+        raise ValueError("Provide a score_function or bind a target to the solver.")
+    return target.score
 
 
 def _build_diagnostics(
@@ -128,6 +140,7 @@ class FastSVGD:
     interaction: InteractionApproximator = field(default_factory=FullBatchInteraction)
     preconditioner: Preconditioner = field(default_factory=IdentityPreconditioner)
     noise: NoiseInjector = field(default_factory=NoNoise)
+    target: Target | None = None
 
     def _raw_drift(
         self,
@@ -139,7 +152,7 @@ class FastSVGD:
         update = np.zeros_like(particles)
         update_counts = np.zeros((n_particles, 1), dtype=float)
 
-        for block in self.interaction.blocks(n_particles, rng):
+        for block in self.interaction.blocks(particles, rng):
             active_indices = np.asarray(block.active_indices, dtype=np.int64)
             source_indices = np.asarray(block.source_indices, dtype=np.int64)
 
@@ -187,7 +200,7 @@ class FastSVGD:
     def step(
         self,
         particles: FloatArray,
-        score_function: ScoreFunction,
+        score_function: ScoreFunction | None = None,
         *,
         step_size: float,
         rng: np.random.Generator | None = None,
@@ -196,7 +209,11 @@ class FastSVGD:
             raise ValueError("step_size must be positive.")
 
         particles_array = _as_particle_array(particles)
-        scores = _as_score_array(score_function(particles_array), particles_array.shape)
+        resolved_score_function = _resolve_score_function(score_function, self.target)
+        scores = _as_score_array(
+            resolved_score_function(particles_array),
+            particles_array.shape,
+        )
         generator = np.random.default_rng() if rng is None else rng
         drift = np.asarray(self._drift(particles_array, scores, generator), dtype=float)
         if drift.shape != particles_array.shape:
@@ -222,7 +239,7 @@ class FastSVGD:
     def run(
         self,
         particles: FloatArray,
-        score_function: ScoreFunction,
+        score_function: ScoreFunction | None = None,
         *,
         n_steps: int,
         step_size: float,
@@ -257,4 +274,3 @@ class FastSVGD:
             diagnostics=tuple(diagnostics),
             trajectory=tuple(trajectory),
         )
-

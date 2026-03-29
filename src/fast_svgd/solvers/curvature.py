@@ -8,8 +8,10 @@ from ..core.base import (
     Kernel,
     RunResult,
     ScoreFunction,
+    SecondOrderTarget,
     StepDiagnostics,
     StepResult,
+    Target,
 )
 from ..core.engine import (
     FastSVGD,
@@ -17,6 +19,7 @@ from ..core.engine import (
     _as_particle_array,
     _as_score_array,
     _build_diagnostics,
+    _resolve_score_function,
     _score_term_from_evaluation,
     _validate_kernel_evaluation,
 )
@@ -33,18 +36,33 @@ def _regularize_positive_matrix(matrix: FloatArray, jitter: float) -> FloatArray
     return (eigenvectors * clipped[None, :]) @ eigenvectors.T
 
 
+def _resolve_hessian_function(
+    hessian_function: HessianFunction | None,
+    target: SecondOrderTarget | None,
+) -> HessianFunction:
+    if hessian_function is not None:
+        return hessian_function
+    if target is None:
+        raise ValueError(
+            "Provide a hessian_function or bind a target with hessian(particles)."
+        )
+    return target.hessian
+
+
 class MatrixSVGD(FastSVGD):
     def __init__(
         self,
         *,
         metric: FloatArray | None = None,
         kernel: Kernel | None = None,
+        target: Target | None = None,
     ) -> None:
         super().__init__(
             kernel=kernel if kernel is not None else MatrixRBFKernel(metric=metric),
             interaction=FullBatchInteraction(),
             preconditioner=IdentityPreconditioner(),
             noise=NoNoise(),
+            target=target,
         )
 
 
@@ -61,9 +79,11 @@ class SteinVariationalNewton:
         *,
         kernel: Kernel | None = None,
         regularization: float = 1e-6,
+        target: SecondOrderTarget | None = None,
     ) -> None:
         self.kernel = kernel if kernel is not None else RBFKernel()
         self.regularization = float(regularization)
+        self.target = target
         if self.regularization <= 0.0:
             raise ValueError("regularization must be positive.")
 
@@ -126,9 +146,9 @@ class SteinVariationalNewton:
     def step(
         self,
         particles: FloatArray,
-        score_function: ScoreFunction,
+        score_function: ScoreFunction | None = None,
         *,
-        hessian_function: HessianFunction,
+        hessian_function: HessianFunction | None = None,
         step_size: float,
         rng: np.random.Generator | None = None,
     ) -> StepResult:
@@ -137,9 +157,17 @@ class SteinVariationalNewton:
             raise ValueError("step_size must be positive.")
 
         particles_array = _as_particle_array(particles)
-        scores = _as_score_array(score_function(particles_array), particles_array.shape)
+        resolved_score_function = _resolve_score_function(score_function, self.target)
+        resolved_hessian_function = _resolve_hessian_function(
+            hessian_function,
+            self.target,
+        )
+        scores = _as_score_array(
+            resolved_score_function(particles_array),
+            particles_array.shape,
+        )
         hessians = _as_hessian_array(
-            hessian_function(particles_array),
+            resolved_hessian_function(particles_array),
             particles_array.shape,
         )
         drift = self._local_newton_direction(particles_array, scores, hessians)
@@ -157,9 +185,9 @@ class SteinVariationalNewton:
     def run(
         self,
         particles: FloatArray,
-        score_function: ScoreFunction,
+        score_function: ScoreFunction | None = None,
         *,
-        hessian_function: HessianFunction,
+        hessian_function: HessianFunction | None = None,
         n_steps: int,
         step_size: float,
         seed: int | None = None,

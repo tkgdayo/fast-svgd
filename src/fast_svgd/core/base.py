@@ -37,9 +37,17 @@ class Kernel(Protocol):
 class InteractionApproximator(Protocol):
     def blocks(
         self,
-        n_particles: int,
+        particles: FloatArray,
         rng: np.random.Generator,
     ) -> tuple[InteractionBlock, ...]: ...
+
+
+class Target(Protocol):
+    def score(self, particles: FloatArray) -> FloatArray: ...
+
+
+class SecondOrderTarget(Target, Protocol):
+    def hessian(self, particles: FloatArray) -> HessianArray: ...
 
 
 class Preconditioner(Protocol):
@@ -82,4 +90,3 @@ class RunResult:
     particles: FloatArray
     diagnostics: tuple[StepDiagnostics, ...]
     trajectory: tuple[FloatArray, ...]
-

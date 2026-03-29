@@ -3,14 +3,15 @@
 [![GitHub stars](https://img.shields.io/github/stars/tkgdayo/fast-svgd?style=social)](https://github.com/tkgdayo/fast-svgd/stargazers)
 
 `fast-svgd` is a small, composable Python package for Stein variational particle methods.
-It starts from vanilla SVGD and includes four practical acceleration families:
+It starts from vanilla SVGD and includes five practical acceleration families:
 
 - `RandomBatchSVGD`: a random-batch interaction backend inspired by the RBM-SVGD family
+- `KNNSVGD`: k-nearest-neighbor local interactions for sparse particle coupling
 - `SPOS`: SVGD with Gaussian particle noise for more robust exploration
 - `MatrixSVGD`: matrix-valued kernels for geometry-aware transport
 - `SteinVariationalNewton`: a block-diagonal Newton approximation driven by Hessians
 
-The package is organized around reusable building blocks so we can grow into matrix-valued kernels and Newton-style methods without rewriting the core solver.
+The package is organized around reusable building blocks so we can grow into matrix-valued kernels, local interaction schemes, and Newton-style methods without rewriting the core solver.
 
 ## Install
 
@@ -32,23 +33,29 @@ For local development:
 python -m pip install -e ".[dev]"
 ```
 
+For k-nearest-neighbor runs with a tree-based neighbor search backend:
+
+```bash
+python -m pip install -e ".[dev,neighbors]"
+```
+
 ## Quick Start
 
 ```python
 import numpy as np
 
-from fast_svgd import RandomBatchSVGD, RBFKernel
-
-
-def standard_normal_score(particles: np.ndarray) -> np.ndarray:
-    return -particles
+from fast_svgd import GaussianTarget, RandomBatchSVGD, RBFKernel
 
 
 particles = np.linspace(-4.0, 4.0, 32, dtype=float).reshape(-1, 1)
-solver = RandomBatchSVGD(kernel=RBFKernel(), batch_size=8)
+target = GaussianTarget(mean=np.zeros(1), precision=np.eye(1))
+solver = RandomBatchSVGD(
+    kernel=RBFKernel(),
+    batch_size=8,
+    target=target,
+)
 result = solver.run(
     particles,
-    standard_normal_score,
     n_steps=150,
     step_size=0.05,
     seed=7,
@@ -56,6 +63,16 @@ result = solver.run(
 
 print(result.particles.mean())
 print(result.particles.var())
+```
+
+If you want to use your own score function, you only bind it once:
+
+```python
+from fast_svgd import FunctionTarget, SVGD
+
+
+solver = SVGD(target=FunctionTarget(score_function=my_score))
+result = solver.run(particles, n_steps=100, step_size=0.03, seed=0)
 ```
 
 ## Benchmark
@@ -85,25 +102,33 @@ Target: `N(0, 1)`
 
 | Method | Per-step cost | Final mean | Final variance | Mean final displacement | Mean path length | Mean wall time (s) |
 | --- | --- | ---: | ---: | ---: | ---: | ---: |
-| `SVGD` | `O(N^2 d)` | `0.011` | `0.909` | `0.238` | `0.242` | `0.249` |
+| `SVGD` | `O(N^2 d)` | `0.011` | `0.909` | `0.238` | `0.242` | `0.242` |
 | `RandomBatchSVGD` (`batch_size=32`) | `O(N B d)` | `0.007` | `0.724` | `0.307` | `0.992` | `0.122` |
-| `SPOS` (`temperature=0.01`) | `O(N^2 d) + O(N d)` | `0.008` | `1.023` | `0.370` | `4.888` | `0.250` |
+| `KNNSVGD` (`k=32`, dense) | `O(N^2 d) + O(N k d)` | `0.011` | `1.096` | `0.496` | `8.098` | `2.261` |
+| `SPOS` (`temperature=0.01`) | `O(N^2 d) + O(N d)` | `0.008` | `1.023` | `0.370` | `4.888` | `0.237` |
 
 For this target, `RandomBatchSVGD` is the clear wall-clock winner while `SPOS`
 lands closest to the target variance under the same update budget. The motion
 columns also make the update style visible: `SPOS` travels much farther because
 noise keeps particles exploring, while `SVGD` stays comparatively conservative.
+`KNNSVGD` is benchmarked here with the pure NumPy dense backend, so local
+interactions are active but neighbor lookup is still quadratic. If you install
+the optional `neighbors` extra and use `backend="ckdtree"`, the interaction
+pattern stays the same while the neighbor search becomes much cheaper in
+practice.
 
 Scaling with particle count:
 
-| Particles | `SVGD` time (s) | `RandomBatchSVGD` time (s) | `SPOS` time (s) |
-| ---: | ---: | ---: | ---: |
-| `128` | `0.068` | `0.064` | `0.075` |
-| `256` | `0.249` | `0.119` | `0.259` |
-| `512` | `1.162` | `0.228` | `1.149` |
+| Particles | `SVGD` time (s) | `RandomBatchSVGD` time (s) | `KNNSVGD` time (s) | `SPOS` time (s) |
+| ---: | ---: | ---: | ---: | ---: |
+| `128` | `0.066` | `0.064` | `1.085` | `0.073` |
+| `256` | `0.242` | `0.120` | `2.261` | `0.243` |
+| `512` | `1.060` | `0.235` | `5.181` | `1.171` |
 
 At `512` particles, `RandomBatchSVGD` is about `5.1x` faster than full-batch
-`SVGD` in this implementation.
+`SVGD` in this implementation. The dense `KNNSVGD` baseline is intentionally
+honest here: without a tree backend it is mainly a locality-control method,
+not yet a wall-clock win.
 
 ### Anisotropic Gaussian
 
@@ -116,10 +141,10 @@ Target covariance: `diag(1.0, 0.04)`
 
 | Method | Steps | Per-step cost | Var(x1) | Var(x2) | Mean final displacement | Mean path length | Mahalanobis energy | Mean wall time (s) |
 | --- | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `SVGD` | `40` | `O(N^2 d)` | `3.390` | `0.201` | `1.766` | `1.845` | `8.428` | `0.008` |
-| `RandomBatchSVGD` | `40` | `O(N B d)` | `2.972` | `0.039` | `1.982` | `2.558` | `3.959` | `0.006` |
-| `SPOS` | `40` | `O(N^2 d) + O(N d)` | `3.401` | `0.211` | `1.774` | `2.391` | `8.699` | `0.007` |
-| `MatrixSVGD` | `40` | `O(N^2 d^2)` | `3.343` | `0.042` | `1.940` | `2.183` | `4.417` | `0.020` |
+| `SVGD` | `40` | `O(N^2 d)` | `3.390` | `0.201` | `1.766` | `1.845` | `8.428` | `0.007` |
+| `RandomBatchSVGD` | `40` | `O(N B d)` | `2.972` | `0.039` | `1.982` | `2.558` | `3.959` | `0.007` |
+| `SPOS` | `40` | `O(N^2 d) + O(N d)` | `3.401` | `0.211` | `1.774` | `2.391` | `8.699` | `0.009` |
+| `MatrixSVGD` | `40` | `O(N^2 d^2)` | `3.343` | `0.042` | `1.940` | `2.183` | `4.417` | `0.024` |
 | `SteinVariationalNewton` | `6` | `O(N^2 d^2) + O(N d^3)` | `0.940` | `0.066` | `2.306` | `2.368` | `2.598` | `0.065` |
 
 This is the kind of target where curvature starts to matter. `MatrixSVGD`
@@ -139,6 +164,7 @@ python scripts/benchmark_readme.py
 
 `fast-svgd` treats an update as the composition of a few interchangeable parts:
 
+- `target`
 - `kernel`
 - `preconditioner`
 - `interaction approximator`
@@ -148,11 +174,14 @@ That means:
 
 - vanilla `SVGD` = full interaction + no noise
 - `RandomBatchSVGD` = random-batch interaction + no noise
+- `KNNSVGD` = k-nearest-neighbor interaction + no noise
 - `SPOS` = full interaction + Gaussian noise
 - `MatrixSVGD` = full interaction + matrix-valued kernel
 - `SteinVariationalNewton` = full interaction + Hessian-driven local Newton solve
 
-You can also build custom combinations with `FastSVGD`.
+You can also build custom combinations with `FastSVGD`, and you can bind the
+target directly to the solver so `run()` only needs particles and step
+settings.
 
 ```python
 import numpy as np
@@ -160,23 +189,26 @@ import numpy as np
 from fast_svgd import (
     DiagonalPreconditioner,
     FastSVGD,
+    FunctionTarget,
     GaussianNoise,
+    KNNInteraction,
     RBFKernel,
-    RandomBatchInteraction,
 )
 
 
 solver = FastSVGD(
+    target=FunctionTarget(score_function=my_score),
     kernel=RBFKernel(),
     preconditioner=DiagonalPreconditioner(np.array([0.5])),
-    interaction=RandomBatchInteraction(batch_size=8),
+    interaction=KNNInteraction(n_neighbors=12, backend="auto"),
     noise=GaussianNoise(temperature=0.1),
 )
 ```
 
 `SteinVariationalNewton` uses the same particle API but additionally needs a
-`hessian_function`, because the curvature step is built from per-particle
-Hessians.
+second-order target. You can still pass a `hessian_function` explicitly, but in
+the common case it is easier to bind `GaussianTarget(...)` or
+`FunctionTarget(score_function=..., hessian_function=...)` once.
 
 ## Layout
 
@@ -185,10 +217,12 @@ layout instead of only from class names:
 
 - `src/fast_svgd/solvers/baseline.py`: full-batch first-order methods
 - `src/fast_svgd/solvers/randomized.py`: interaction approximation methods
+- `src/fast_svgd/solvers/localized.py`: neighborhood-restricted interaction methods
 - `src/fast_svgd/solvers/stochastic.py`: noise-injected particle methods
 - `src/fast_svgd/solvers/curvature.py`: matrix-kernel and Newton-style methods
 - `src/fast_svgd/kernels/scalar.py`: scalar kernels such as `RBFKernel` and `IMQKernel`
 - `src/fast_svgd/kernels/matrix.py`: geometry-aware matrix-valued kernels
+- `src/fast_svgd/targets.py`: reusable target objects for score and Hessian binding
 
 The root package still re-exports the main classes, so user-facing imports stay short.
 
@@ -198,6 +232,7 @@ The root package still re-exports the main classes, so user-facing imports stay 
 
 - `SVGD`
 - `RandomBatchSVGD`
+- `KNNSVGD`
 - `SPOS`
 - `MatrixSVGD`
 - `SteinVariationalNewton`
@@ -214,6 +249,12 @@ The root package still re-exports the main classes, so user-facing imports stay 
 
 - `FullBatchInteraction`
 - `RandomBatchInteraction`
+- `KNNInteraction`
+
+### Targets
+
+- `FunctionTarget`
+- `GaussianTarget`
 
 ### Preconditioners
 
@@ -227,8 +268,8 @@ The root package still re-exports the main classes, so user-facing imports stay 
 
 ## Roadmap
 
-The current version covers baseline, randomized, stochastic, and curvature-aware
-SVGD families in one package.
+The current version covers baseline, randomized, localized, stochastic, and
+curvature-aware SVGD families in one package.
 
 Planned next steps:
 

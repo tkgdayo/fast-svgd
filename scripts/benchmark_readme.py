@@ -9,6 +9,8 @@ from dataclasses import dataclass
 import numpy as np
 
 from fast_svgd import (
+    GaussianTarget,
+    KNNSVGD,
     MatrixRBFKernel,
     MatrixSVGD,
     RandomBatchSVGD,
@@ -26,11 +28,14 @@ STANDARD_NORMAL_STEPS = 250
 STANDARD_NORMAL_INIT_MIN = -2.0
 STANDARD_NORMAL_INIT_MAX = 2.0
 RANDOM_BATCH_SIZE = 32
+KNN_NEIGHBORS = 32
 SPOS_TEMPERATURE = 0.01
 ANISOTROPIC_PARTICLES = 64
 ANISOTROPIC_INIT_MIN = -4.0
 ANISOTROPIC_INIT_MAX = 4.0
 ANISOTROPIC_PRECISION = np.diag([1.0, 25.0])
+STANDARD_NORMAL_TARGET = GaussianTarget(mean=np.zeros(1), precision=np.eye(1))
+ANISOTROPIC_TARGET = GaussianTarget(mean=np.zeros(2), precision=ANISOTROPIC_PRECISION)
 
 
 @dataclass(frozen=True)
@@ -57,19 +62,6 @@ class SolverConfig:
     make: Callable[[], object]
     steps: int
     step_size: float
-
-
-def standard_normal_score(particles: np.ndarray) -> np.ndarray:
-    return -particles
-
-
-def anisotropic_gaussian_score(particles: np.ndarray) -> np.ndarray:
-    return -(particles @ ANISOTROPIC_PRECISION)
-
-
-def anisotropic_gaussian_hessian(particles: np.ndarray) -> np.ndarray:
-    return np.repeat((-ANISOTROPIC_PRECISION)[None, :, :], particles.shape[0], axis=0)
-
 
 def particle_motion_metrics(trajectory: tuple[np.ndarray, ...]) -> tuple[float, float]:
     if len(trajectory) < 2:
@@ -98,7 +90,10 @@ def initial_particles(
 def standard_normal_solvers() -> dict[str, SolverConfig]:
     return {
         "SVGD": SolverConfig(
-            make=lambda: SVGD(kernel=RBFKernel()),
+            make=lambda: SVGD(
+                kernel=RBFKernel(),
+                target=STANDARD_NORMAL_TARGET,
+            ),
             steps=STANDARD_NORMAL_STEPS,
             step_size=STANDARD_NORMAL_STEP_SIZE,
         ),
@@ -106,6 +101,17 @@ def standard_normal_solvers() -> dict[str, SolverConfig]:
             make=lambda: RandomBatchSVGD(
                 kernel=RBFKernel(),
                 batch_size=RANDOM_BATCH_SIZE,
+                target=STANDARD_NORMAL_TARGET,
+            ),
+            steps=STANDARD_NORMAL_STEPS,
+            step_size=STANDARD_NORMAL_STEP_SIZE,
+        ),
+        "KNNSVGD": SolverConfig(
+            make=lambda: KNNSVGD(
+                kernel=RBFKernel(),
+                n_neighbors=KNN_NEIGHBORS,
+                backend="dense",
+                target=STANDARD_NORMAL_TARGET,
             ),
             steps=STANDARD_NORMAL_STEPS,
             step_size=STANDARD_NORMAL_STEP_SIZE,
@@ -114,6 +120,7 @@ def standard_normal_solvers() -> dict[str, SolverConfig]:
             make=lambda: SPOS(
                 kernel=RBFKernel(),
                 temperature=SPOS_TEMPERATURE,
+                target=STANDARD_NORMAL_TARGET,
             ),
             steps=STANDARD_NORMAL_STEPS,
             step_size=STANDARD_NORMAL_STEP_SIZE,
@@ -124,7 +131,10 @@ def standard_normal_solvers() -> dict[str, SolverConfig]:
 def anisotropic_solvers() -> dict[str, SolverConfig]:
     return {
         "SVGD": SolverConfig(
-            make=lambda: SVGD(kernel=RBFKernel(bandwidth=5.0)),
+            make=lambda: SVGD(
+                kernel=RBFKernel(bandwidth=5.0),
+                target=ANISOTROPIC_TARGET,
+            ),
             steps=40,
             step_size=0.03,
         ),
@@ -132,6 +142,7 @@ def anisotropic_solvers() -> dict[str, SolverConfig]:
             make=lambda: RandomBatchSVGD(
                 batch_size=16,
                 kernel=RBFKernel(bandwidth=5.0),
+                target=ANISOTROPIC_TARGET,
             ),
             steps=40,
             step_size=0.03,
@@ -140,6 +151,7 @@ def anisotropic_solvers() -> dict[str, SolverConfig]:
             make=lambda: SPOS(
                 kernel=RBFKernel(bandwidth=5.0),
                 temperature=0.01,
+                target=ANISOTROPIC_TARGET,
             ),
             steps=40,
             step_size=0.03,
@@ -147,6 +159,7 @@ def anisotropic_solvers() -> dict[str, SolverConfig]:
         "MatrixSVGD": SolverConfig(
             make=lambda: MatrixSVGD(
                 kernel=MatrixRBFKernel(metric=np.array([1.0, 5.0]), bandwidth=2.0),
+                target=ANISOTROPIC_TARGET,
             ),
             steps=40,
             step_size=0.04,
@@ -155,6 +168,7 @@ def anisotropic_solvers() -> dict[str, SolverConfig]:
             make=lambda: SteinVariationalNewton(
                 kernel=RBFKernel(bandwidth=1.0),
                 regularization=1e-4,
+                target=ANISOTROPIC_TARGET,
             ),
             steps=6,
             step_size=0.5,
@@ -175,7 +189,6 @@ def run_trial(method_name: str, n_particles: int, seed: int) -> TrialSummary:
     start = time.perf_counter()
     result = solver.run(
         particles,
-        standard_normal_score,
         n_steps=config.steps,
         step_size=config.step_size,
         seed=seed,
@@ -228,25 +241,13 @@ def run_anisotropic_trial(method_name: str, seed: int) -> CurvatureTrialSummary:
         upper=ANISOTROPIC_INIT_MAX,
     )
     start = time.perf_counter()
-    if method_name == "SteinVariationalNewton":
-        result = solver.run(
-            particles,
-            anisotropic_gaussian_score,
-            hessian_function=anisotropic_gaussian_hessian,
-            n_steps=config.steps,
-            step_size=config.step_size,
-            seed=seed,
-            store_trajectory=True,
-        )
-    else:
-        result = solver.run(
-            particles,
-            anisotropic_gaussian_score,
-            n_steps=config.steps,
-            step_size=config.step_size,
-            seed=seed,
-            store_trajectory=True,
-        )
+    result = solver.run(
+        particles,
+        n_steps=config.steps,
+        step_size=config.step_size,
+        seed=seed,
+        store_trajectory=True,
+    )
     wall_time_s = time.perf_counter() - start
     final_particles = result.particles
     mean_final_displacement, mean_path_length = particle_motion_metrics(result.trajectory)
@@ -278,12 +279,13 @@ def render_markdown() -> str:
     quality_rows = {
         "SVGD": summarize_quality("SVGD"),
         "RandomBatchSVGD": summarize_quality("RandomBatchSVGD"),
+        "KNNSVGD": summarize_quality("KNNSVGD"),
         "SPOS": summarize_quality("SPOS"),
     }
     scaling_rows = {
         n_particles: {
             method_name: summarize_scaling(method_name, n_particles)
-            for method_name in ("SVGD", "RandomBatchSVGD", "SPOS")
+            for method_name in ("SVGD", "RandomBatchSVGD", "KNNSVGD", "SPOS")
         }
         for n_particles in STANDARD_NORMAL_SCALING_PARTICLES
     }
@@ -336,6 +338,14 @@ def render_markdown() -> str:
             f"`{quality_rows['RandomBatchSVGD'].wall_time_s:.3f}` |"
         ),
         (
+            "| `KNNSVGD` | "
+            f"`{quality_rows['KNNSVGD'].mean:.3f}` | "
+            f"`{quality_rows['KNNSVGD'].variance:.3f}` | "
+            f"`{quality_rows['KNNSVGD'].mean_final_displacement:.3f}` | "
+            f"`{quality_rows['KNNSVGD'].mean_path_length:.3f}` | "
+            f"`{quality_rows['KNNSVGD'].wall_time_s:.3f}` |"
+        ),
+        (
             "| `SPOS` | "
             f"`{quality_rows['SPOS'].mean:.3f}` | "
             f"`{quality_rows['SPOS'].variance:.3f}` | "
@@ -344,8 +354,11 @@ def render_markdown() -> str:
             f"`{quality_rows['SPOS'].wall_time_s:.3f}` |"
         ),
         "",
-        "| Particles | `SVGD` time (s) | `RandomBatchSVGD` time (s) | `SPOS` time (s) |",
-        "| ---: | ---: | ---: | ---: |",
+        (
+            "| Particles | `SVGD` time (s) | `RandomBatchSVGD` time (s) | "
+            "`KNNSVGD` time (s) | `SPOS` time (s) |"
+        ),
+        "| ---: | ---: | ---: | ---: | ---: |",
     ]
 
     for n_particles in STANDARD_NORMAL_SCALING_PARTICLES:
@@ -354,6 +367,7 @@ def render_markdown() -> str:
             f"| `{n_particles}` | "
             f"`{row['SVGD']:.3f}` | "
             f"`{row['RandomBatchSVGD']:.3f}` | "
+            f"`{row['KNNSVGD']:.3f}` | "
             f"`{row['SPOS']:.3f}` |"
         )
 

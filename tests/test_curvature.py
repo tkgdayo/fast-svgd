@@ -1,6 +1,13 @@
 import numpy as np
 
-from fast_svgd import MatrixRBFKernel, MatrixSVGD, RBFKernel, SVGD, SteinVariationalNewton
+from fast_svgd import (
+    GaussianTarget,
+    MatrixRBFKernel,
+    MatrixSVGD,
+    RBFKernel,
+    SVGD,
+    SteinVariationalNewton,
+)
 
 
 PRECISION = np.diag([1.0, 25.0])
@@ -73,3 +80,23 @@ def test_stein_variational_newton_converges_faster_on_anisotropic_gaussian() -> 
     assert mahalanobis_energy(newton_result.particles) < mahalanobis_energy(
         vanilla_result.particles
     )
+
+
+def test_stein_variational_newton_accepts_bound_second_order_target() -> None:
+    rng = np.random.default_rng(1)
+    initial = rng.uniform(-4.0, 4.0, size=(64, 2))
+    target = GaussianTarget(mean=np.zeros(2), precision=PRECISION)
+    solver = SteinVariationalNewton(
+        kernel=RBFKernel(bandwidth=1.0),
+        regularization=1e-4,
+        target=target,
+    )
+
+    result = solver.run(
+        initial,
+        n_steps=6,
+        step_size=0.5,
+        seed=1,
+    )
+
+    assert mahalanobis_energy(result.particles) < mahalanobis_energy(initial)

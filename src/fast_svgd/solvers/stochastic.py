@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from ..core.base import InteractionApproximator, Kernel, Preconditioner
+from ..core.base import InteractionApproximator, Kernel, Preconditioner, Target
 from ..core.engine import FastSVGD
 from ..interactions import FullBatchInteraction
 from ..kernels import RBFKernel
@@ -16,6 +16,7 @@ class SPOS(FastSVGD):
         kernel: Kernel | None = None,
         interaction: InteractionApproximator | None = None,
         preconditioner: Preconditioner | None = None,
+        target: Target | None = None,
     ) -> None:
         super().__init__(
             kernel=kernel if kernel is not None else RBFKernel(),
@@ -26,5 +27,5 @@ class SPOS(FastSVGD):
                 else IdentityPreconditioner()
             ),
             noise=GaussianNoise(temperature=temperature),
+            target=target,
         )
-

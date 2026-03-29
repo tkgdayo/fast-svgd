@@ -3,7 +3,11 @@ import numpy as np
 from fast_svgd import (
     DiagonalPreconditioner,
     FastSVGD,
+    FunctionTarget,
     GaussianNoise,
+    GaussianTarget,
+    KNNInteraction,
+    KNNSVGD,
     RBFKernel,
     RandomBatchInteraction,
     RandomBatchSVGD,
@@ -80,3 +84,48 @@ def test_components_can_be_composed_in_fast_svgd() -> None:
     assert len(result.trajectory) == 21
     assert np.mean(result.particles**2) < np.mean(initial**2)
 
+
+def test_svgd_can_bind_function_target() -> None:
+    initial = np.linspace(-5.0, 5.0, 32, dtype=float).reshape(-1, 1)
+    solver = SVGD(
+        kernel=RBFKernel(bandwidth=2.0),
+        target=FunctionTarget(score_function=standard_normal_score),
+    )
+
+    result = solver.run(
+        initial,
+        n_steps=60,
+        step_size=0.05,
+        seed=3,
+    )
+
+    assert np.mean(result.particles**2) < np.mean(initial**2)
+
+
+def test_knn_interaction_uses_nearest_particles() -> None:
+    particles = np.array([[-3.0], [-1.0], [0.2], [2.7]], dtype=float)
+    interaction = KNNInteraction(n_neighbors=2, backend="dense")
+
+    blocks = interaction.blocks(particles, np.random.default_rng(0))
+    neighborhoods = [tuple(block.source_indices.tolist()) for block in blocks]
+
+    assert neighborhoods == [(0, 1), (1, 2), (2, 1), (3, 2)]
+
+
+def test_knn_svgd_contracts_with_bound_gaussian_target() -> None:
+    initial = np.linspace(-4.0, 4.0, 32, dtype=float).reshape(-1, 1)
+    solver = KNNSVGD(
+        n_neighbors=8,
+        backend="dense",
+        kernel=RBFKernel(bandwidth=1.0),
+        target=GaussianTarget(mean=np.zeros(1), precision=np.eye(1)),
+    )
+
+    result = solver.run(
+        initial,
+        n_steps=60,
+        step_size=0.05,
+        seed=4,
+    )
+
+    assert np.mean(result.particles**2) < np.mean(initial**2)

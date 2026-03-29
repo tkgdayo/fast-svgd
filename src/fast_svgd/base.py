@@ -10,8 +10,10 @@ from .core.base import (
     Preconditioner,
     RunResult,
     ScoreFunction,
+    SecondOrderTarget,
     StepDiagnostics,
     StepResult,
+    Target,
 )
 
 __all__ = [
@@ -26,6 +28,8 @@ __all__ = [
     "Preconditioner",
     "RunResult",
     "ScoreFunction",
+    "SecondOrderTarget",
     "StepDiagnostics",
     "StepResult",
+    "Target",
 ]

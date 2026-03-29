@@ -38,6 +38,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+neighbors = [
+  "scipy>=1.11",
+]
 dev = [
   "build>=1.2",
   "pytest>=8",
