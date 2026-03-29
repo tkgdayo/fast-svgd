@@ -1,0 +1,62 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fast-svgd"
+version = "0.1.0"
+description = "Composable Stein variational gradient descent with fast interaction backends."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [
+  { name = "tkgdayo" }
+]
+keywords = [
+  "stein variational gradient descent",
+  "svgd",
+  "particle optimization",
+  "variational inference",
+  "sampling",
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Science/Research",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Scientific/Engineering",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+  "numpy>=1.26",
+]
+
+[project.optional-dependencies]
+dev = [
+  "build>=1.2",
+  "pytest>=8",
+  "twine>=5",
+]
+
+[project.urls]
+Homepage = "https://github.com/tkgdayo/fast-svgd"
+Repository = "https://github.com/tkgdayo/fast-svgd"
+Issues = "https://github.com/tkgdayo/fast-svgd/issues"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+fast_svgd = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
