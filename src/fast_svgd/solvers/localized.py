@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from ..core.base import Kernel, Preconditioner, Target
+from ..core.base import Kernel, Preconditioner
 from ..core.engine import FastSVGD
 from ..interactions import KNNInteraction
 from ..kernels import RBFKernel
@@ -17,7 +17,6 @@ class KNNSVGD(FastSVGD):
         backend: str = "auto",
         kernel: Kernel | None = None,
         preconditioner: Preconditioner | None = None,
-        target: Target | None = None,
     ) -> None:
         super().__init__(
             kernel=kernel if kernel is not None else RBFKernel(),
@@ -32,5 +31,4 @@ class KNNSVGD(FastSVGD):
                 else IdentityPreconditioner()
             ),
             noise=NoNoise(),
-            target=target,
         )

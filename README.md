@@ -54,14 +54,11 @@ from fast_svgd import GaussianTarget, RandomBatchSVGD, RBFKernel
 
 
 particles = np.linspace(-4.0, 4.0, 32, dtype=float).reshape(-1, 1)
-target = GaussianTarget(mean=np.zeros(1), precision=np.eye(1))
-solver = RandomBatchSVGD(
-    kernel=RBFKernel(),
-    batch_size=8,
-    target=target,
-)
+target = GaussianTarget(mean=np.zeros(1), std=np.ones(1))
+solver = RandomBatchSVGD(kernel=RBFKernel(), batch_size=8)
 result = solver.run(
     particles,
+    target.score,
     n_steps=150,
     step_size=0.05,
     seed=7,
@@ -71,14 +68,14 @@ print(result.particles.mean())
 print(result.particles.var())
 ```
 
-If you want to use your own score function, you only bind it once:
+If you want to use your own score function, pass it explicitly:
 
 ```python
-from fast_svgd import FunctionTarget, SVGD
+from fast_svgd import SVGD
 
 
-solver = SVGD(target=FunctionTarget(score_function=my_score))
-result = solver.run(particles, n_steps=100, step_size=0.03, seed=0)
+solver = SVGD()
+result = solver.run(particles, my_score, n_steps=100, step_size=0.03, seed=0)
 ```
 
 ## Benchmark
@@ -113,10 +110,10 @@ Target: `N(0, 1)`
 
 | Method | Per-step cost | Target discrepancy | Mean wall time (s) | Final mean | Final variance | Mean final displacement | Mean path length |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `SVGD` | `O(N^2 d)` | `0.093` | `0.248` | `0.011` | `0.909` | `0.238` | `0.242` |
-| `RandomBatchSVGD` (`batch_size=32`) | `O(N B d)` | `0.276` | `0.136` | `0.007` | `0.724` | `0.307` | `0.992` |
-| `KNNSVGD` (`k=32`, dense) | `O(N^2 d) + O(N k d)` | `0.098` | `2.438` | `0.011` | `1.096` | `0.496` | `8.098` |
-| `SPOS` (`temperature=0.01`) | `O(N^2 d) + O(N d)` | `0.046` | `0.256` | `0.008` | `1.023` | `0.370` | `4.888` |
+| `SVGD` | `O(N^2 d)` | `0.093` | `0.228` | `0.011` | `0.909` | `0.238` | `0.242` |
+| `RandomBatchSVGD` (`batch_size=32`) | `O(N B d)` | `0.276` | `0.123` | `0.007` | `0.724` | `0.307` | `0.992` |
+| `KNNSVGD` (`k=32`, dense) | `O(N^2 d) + O(N k d)` | `0.098` | `2.136` | `0.011` | `1.096` | `0.496` | `8.098` |
+| `SPOS` (`temperature=0.01`) | `O(N^2 d) + O(N d)` | `0.046` | `0.229` | `0.008` | `1.023` | `0.370` | `4.888` |
 
 For this target, `RandomBatchSVGD` is the clear wall-clock winner while `SPOS`
 lands closest to the target under the same update budget. The movement columns
@@ -132,9 +129,9 @@ Scaling with particle count:
 
 | Particles | `SVGD` time (s) | `RandomBatchSVGD` time (s) | `KNNSVGD` time (s) | `SPOS` time (s) |
 | ---: | ---: | ---: | ---: | ---: |
-| `128` | `0.072` | `0.068` | `1.184` | `0.076` |
-| `256` | `0.248` | `0.131` | `2.217` | `0.230` |
-| `512` | `1.150` | `0.254` | `4.974` | `1.101` |
+| `128` | `0.063` | `0.063` | `1.033` | `0.073` |
+| `256` | `0.225` | `0.119` | `2.272` | `0.239` |
+| `512` | `0.988` | `0.228` | `4.719` | `0.997` |
 
 At `512` particles, `RandomBatchSVGD` is about `5.1x` faster than full-batch
 `SVGD` in this implementation. The dense `KNNSVGD` baseline is intentionally
@@ -156,7 +153,7 @@ Target covariance: `diag(1.0, 0.04)`
 | `RandomBatchSVGD` | `40` | `O(N B d)` | `1.976` | `0.005` | `2.972` | `0.039` | `1.982` | `2.558` | `3.959` |
 | `SPOS` | `40` | `O(N^2 d) + O(N d)` | `2.413` | `0.006` | `3.401` | `0.211` | `1.774` | `2.391` | `8.699` |
 | `MatrixSVGD` | `40` | `O(N^2 d^2)` | `2.348` | `0.017` | `3.343` | `0.042` | `1.940` | `2.183` | `4.417` |
-| `SteinVariationalNewton` | `6` | `O(N^2 d^2) + O(N d^3)` | `0.066` | `0.053` | `0.940` | `0.066` | `2.306` | `2.368` | `2.598` |
+| `SteinVariationalNewton` | `6` | `O(N^2 d^2) + O(N d^3)` | `0.066` | `0.054` | `0.940` | `0.066` | `2.306` | `2.368` | `2.598` |
 
 This is the kind of target where curvature starts to matter. `MatrixSVGD`
 improves over plain `SVGD` on the stiff axis, while `SteinVariationalNewton`
@@ -175,7 +172,7 @@ python scripts/benchmark_readme.py
 
 `fast-svgd` treats an update as the composition of a few interchangeable parts:
 
-- `target`
+- `score function`
 - `kernel`
 - `preconditioner`
 - `interaction approximator`
@@ -190,9 +187,9 @@ That means:
 - `MatrixSVGD` = full interaction + matrix-valued kernel
 - `SteinVariationalNewton` = full interaction + Hessian-driven local Newton solve
 
-You can also build custom combinations with `FastSVGD`, and you can bind the
-target directly to the solver so `run()` only needs particles and step
-settings.
+You can also build custom combinations with `FastSVGD`. The solver API stays
+fully explicit: pass `particles` and the required score or Hessian callables at
+`run()` or `step()` time.
 
 ```python
 import numpy as np
@@ -200,7 +197,6 @@ import numpy as np
 from fast_svgd import (
     DiagonalPreconditioner,
     FastSVGD,
-    FunctionTarget,
     GaussianNoise,
     KNNInteraction,
     RBFKernel,
@@ -208,18 +204,17 @@ from fast_svgd import (
 
 
 solver = FastSVGD(
-    target=FunctionTarget(score_function=my_score),
     kernel=RBFKernel(),
     preconditioner=DiagonalPreconditioner(np.array([0.5])),
     interaction=KNNInteraction(n_neighbors=12, backend="auto"),
     noise=GaussianNoise(temperature=0.1),
 )
+
+result = solver.run(particles, my_score, n_steps=100, step_size=0.03, seed=0)
 ```
 
 `SteinVariationalNewton` uses the same particle API but additionally needs a
-second-order target. You can still pass a `hessian_function` explicitly, but in
-the common case it is easier to bind `GaussianTarget(...)` or
-`FunctionTarget(score_function=..., hessian_function=...)` once.
+`hessian_function`.
 
 ## Layout
 
@@ -233,7 +228,7 @@ layout instead of only from class names:
 - `src/fast_svgd/solvers/curvature.py`: matrix-kernel and Newton-style methods
 - `src/fast_svgd/kernels/scalar.py`: scalar kernels such as `RBFKernel` and `IMQKernel`
 - `src/fast_svgd/kernels/matrix.py`: geometry-aware matrix-valued kernels
-- `src/fast_svgd/targets.py`: reusable target objects for score and Hessian binding
+- `src/fast_svgd/targets.py`: reusable target objects for score and Hessian helpers
 
 The root package still re-exports the main classes, so user-facing imports stay short.
 

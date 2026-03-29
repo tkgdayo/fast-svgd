@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from ..core.base import Kernel, Preconditioner, Target
+from ..core.base import Kernel, Preconditioner
 from ..core.engine import FastSVGD
 from ..interactions import FullBatchInteraction
 from ..kernels import RBFKernel
@@ -14,7 +14,6 @@ class SVGD(FastSVGD):
         *,
         kernel: Kernel | None = None,
         preconditioner: Preconditioner | None = None,
-        target: Target | None = None,
     ) -> None:
         super().__init__(
             kernel=kernel if kernel is not None else RBFKernel(),
@@ -25,5 +24,4 @@ class SVGD(FastSVGD):
                 else IdentityPreconditioner()
             ),
             noise=NoNoise(),
-            target=target,
         )

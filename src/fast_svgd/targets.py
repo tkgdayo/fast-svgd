@@ -1,10 +1,31 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 
 from .core.base import FloatArray, HessianArray, HessianFunction, ScoreFunction
+
+
+def _as_diagonal_covariance(
+    values: FloatArray,
+    *,
+    mean_dimension: int,
+    name: str,
+) -> FloatArray:
+    array = np.asarray(values, dtype=float)
+    if array.ndim == 0:
+        scalar = float(array)
+        if scalar <= 0.0:
+            raise ValueError(f"{name} must be positive.")
+        return np.eye(mean_dimension, dtype=float) * scalar
+    if array.ndim == 1:
+        if array.shape[0] != mean_dimension:
+            raise ValueError(f"{name} must match the mean dimension.")
+        if np.any(array <= 0.0):
+            raise ValueError(f"{name} entries must be positive.")
+        return np.diag(array)
+    raise ValueError(f"{name} must be a scalar or one-dimensional array.")
 
 
 @dataclass(frozen=True)
@@ -28,29 +49,48 @@ class GaussianTarget:
     """Multivariate Gaussian target with exact score and Hessian."""
 
     mean: FloatArray
+    std: FloatArray | None = None
+    var: FloatArray | None = None
     covariance: FloatArray | None = None
-    precision: FloatArray | None = None
+    precision: FloatArray = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         mean = np.asarray(self.mean, dtype=float)
         if mean.ndim != 1:
             raise ValueError("mean must be a one-dimensional array.")
-        if (self.covariance is None) == (self.precision is None):
-            raise ValueError("Provide exactly one of covariance or precision.")
+        provided = sum(
+            option is not None for option in (self.std, self.var, self.covariance)
+        )
+        if provided != 1:
+            raise ValueError("Provide exactly one of std, var, or covariance.")
 
-        if self.precision is not None:
-            precision = np.asarray(self.precision, dtype=float)
+        if self.std is not None:
+            std = np.asarray(self.std, dtype=float)
+            covariance = _as_diagonal_covariance(
+                std * std,
+                mean_dimension=mean.shape[0],
+                name="std",
+            )
+        elif self.var is not None:
+            covariance = _as_diagonal_covariance(
+                self.var,
+                mean_dimension=mean.shape[0],
+                name="var",
+            )
         else:
             covariance = np.asarray(self.covariance, dtype=float)
-            precision = np.linalg.inv(covariance)
+            if covariance.shape != (mean.shape[0], mean.shape[0]):
+                raise ValueError("covariance must match the mean dimension.")
+            covariance = 0.5 * (covariance + covariance.T)
+            eigenvalues = np.linalg.eigvalsh(covariance)
+            if np.any(eigenvalues <= 0.0):
+                raise ValueError("covariance must be positive definite.")
 
-        if precision.shape != (mean.shape[0], mean.shape[0]):
-            raise ValueError("precision/covariance must match the mean dimension.")
-        precision = 0.5 * (precision + precision.T)
+        precision = np.linalg.inv(covariance)
 
         object.__setattr__(self, "mean", mean)
+        object.__setattr__(self, "covariance", covariance)
         object.__setattr__(self, "precision", precision)
-        object.__setattr__(self, "covariance", None)
 
     def score(self, particles: FloatArray) -> FloatArray:
         centered = np.asarray(particles, dtype=float) - self.mean[None, :]

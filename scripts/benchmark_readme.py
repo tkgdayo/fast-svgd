@@ -40,11 +40,11 @@ ANISOTROPIC_MEAN = np.zeros(2)
 ANISOTROPIC_COVARIANCE = np.diag([1.0, 0.04])
 STANDARD_NORMAL_TARGET = GaussianTarget(
     mean=STANDARD_NORMAL_MEAN,
-    covariance=STANDARD_NORMAL_COVARIANCE,
+    var=np.ones(1),
 )
 ANISOTROPIC_TARGET = GaussianTarget(
     mean=ANISOTROPIC_MEAN,
-    precision=ANISOTROPIC_PRECISION,
+    var=np.array([1.0, 0.04]),
 )
 
 
@@ -120,10 +120,7 @@ def initial_particles(
 def standard_normal_solvers() -> dict[str, SolverConfig]:
     return {
         "SVGD": SolverConfig(
-            make=lambda: SVGD(
-                kernel=RBFKernel(),
-                target=STANDARD_NORMAL_TARGET,
-            ),
+            make=lambda: SVGD(kernel=RBFKernel()),
             steps=STANDARD_NORMAL_STEPS,
             step_size=STANDARD_NORMAL_STEP_SIZE,
         ),
@@ -131,7 +128,6 @@ def standard_normal_solvers() -> dict[str, SolverConfig]:
             make=lambda: RandomBatchSVGD(
                 kernel=RBFKernel(),
                 batch_size=RANDOM_BATCH_SIZE,
-                target=STANDARD_NORMAL_TARGET,
             ),
             steps=STANDARD_NORMAL_STEPS,
             step_size=STANDARD_NORMAL_STEP_SIZE,
@@ -141,7 +137,6 @@ def standard_normal_solvers() -> dict[str, SolverConfig]:
                 kernel=RBFKernel(),
                 n_neighbors=KNN_NEIGHBORS,
                 backend="dense",
-                target=STANDARD_NORMAL_TARGET,
             ),
             steps=STANDARD_NORMAL_STEPS,
             step_size=STANDARD_NORMAL_STEP_SIZE,
@@ -150,7 +145,6 @@ def standard_normal_solvers() -> dict[str, SolverConfig]:
             make=lambda: SPOS(
                 kernel=RBFKernel(),
                 temperature=SPOS_TEMPERATURE,
-                target=STANDARD_NORMAL_TARGET,
             ),
             steps=STANDARD_NORMAL_STEPS,
             step_size=STANDARD_NORMAL_STEP_SIZE,
@@ -161,10 +155,7 @@ def standard_normal_solvers() -> dict[str, SolverConfig]:
 def anisotropic_solvers() -> dict[str, SolverConfig]:
     return {
         "SVGD": SolverConfig(
-            make=lambda: SVGD(
-                kernel=RBFKernel(bandwidth=5.0),
-                target=ANISOTROPIC_TARGET,
-            ),
+            make=lambda: SVGD(kernel=RBFKernel(bandwidth=5.0)),
             steps=40,
             step_size=0.03,
         ),
@@ -172,7 +163,6 @@ def anisotropic_solvers() -> dict[str, SolverConfig]:
             make=lambda: RandomBatchSVGD(
                 batch_size=16,
                 kernel=RBFKernel(bandwidth=5.0),
-                target=ANISOTROPIC_TARGET,
             ),
             steps=40,
             step_size=0.03,
@@ -181,7 +171,6 @@ def anisotropic_solvers() -> dict[str, SolverConfig]:
             make=lambda: SPOS(
                 kernel=RBFKernel(bandwidth=5.0),
                 temperature=0.01,
-                target=ANISOTROPIC_TARGET,
             ),
             steps=40,
             step_size=0.03,
@@ -189,7 +178,6 @@ def anisotropic_solvers() -> dict[str, SolverConfig]:
         "MatrixSVGD": SolverConfig(
             make=lambda: MatrixSVGD(
                 kernel=MatrixRBFKernel(metric=np.array([1.0, 5.0]), bandwidth=2.0),
-                target=ANISOTROPIC_TARGET,
             ),
             steps=40,
             step_size=0.04,
@@ -198,7 +186,6 @@ def anisotropic_solvers() -> dict[str, SolverConfig]:
             make=lambda: SteinVariationalNewton(
                 kernel=RBFKernel(bandwidth=1.0),
                 regularization=1e-4,
-                target=ANISOTROPIC_TARGET,
             ),
             steps=6,
             step_size=0.5,
@@ -219,6 +206,7 @@ def run_trial(method_name: str, n_particles: int, seed: int) -> TrialSummary:
     start = time.perf_counter()
     result = solver.run(
         particles,
+        STANDARD_NORMAL_TARGET.score,
         n_steps=config.steps,
         step_size=config.step_size,
         seed=seed,
@@ -279,13 +267,25 @@ def run_anisotropic_trial(method_name: str, seed: int) -> CurvatureTrialSummary:
         upper=ANISOTROPIC_INIT_MAX,
     )
     start = time.perf_counter()
-    result = solver.run(
-        particles,
-        n_steps=config.steps,
-        step_size=config.step_size,
-        seed=seed,
-        store_trajectory=True,
-    )
+    if method_name == "SteinVariationalNewton":
+        result = solver.run(
+            particles,
+            ANISOTROPIC_TARGET.score,
+            hessian_function=ANISOTROPIC_TARGET.hessian,
+            n_steps=config.steps,
+            step_size=config.step_size,
+            seed=seed,
+            store_trajectory=True,
+        )
+    else:
+        result = solver.run(
+            particles,
+            ANISOTROPIC_TARGET.score,
+            n_steps=config.steps,
+            step_size=config.step_size,
+            seed=seed,
+            store_trajectory=True,
+        )
     wall_time_s = time.perf_counter() - start
     final_particles = result.particles
     mean_final_displacement, mean_path_length = particle_motion_metrics(result.trajectory)

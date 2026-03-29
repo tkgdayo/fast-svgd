@@ -82,18 +82,16 @@ def test_stein_variational_newton_converges_faster_on_anisotropic_gaussian() -> 
     )
 
 
-def test_stein_variational_newton_accepts_bound_second_order_target() -> None:
+def test_stein_variational_newton_accepts_explicit_target_callables() -> None:
     rng = np.random.default_rng(1)
     initial = rng.uniform(-4.0, 4.0, size=(64, 2))
-    target = GaussianTarget(mean=np.zeros(2), precision=PRECISION)
-    solver = SteinVariationalNewton(
-        kernel=RBFKernel(bandwidth=1.0),
-        regularization=1e-4,
-        target=target,
-    )
+    target = GaussianTarget(mean=np.zeros(2), var=np.array([1.0, 0.04]))
+    solver = SteinVariationalNewton(kernel=RBFKernel(bandwidth=1.0), regularization=1e-4)
 
     result = solver.run(
         initial,
+        target.score,
+        hessian_function=target.hessian,
         n_steps=6,
         step_size=0.5,
         seed=1,

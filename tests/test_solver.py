@@ -85,15 +85,14 @@ def test_components_can_be_composed_in_fast_svgd() -> None:
     assert np.mean(result.particles**2) < np.mean(initial**2)
 
 
-def test_svgd_can_bind_function_target() -> None:
+def test_function_target_score_can_be_passed_explicitly() -> None:
     initial = np.linspace(-5.0, 5.0, 32, dtype=float).reshape(-1, 1)
-    solver = SVGD(
-        kernel=RBFKernel(bandwidth=2.0),
-        target=FunctionTarget(score_function=standard_normal_score),
-    )
+    solver = SVGD(kernel=RBFKernel(bandwidth=2.0))
+    target = FunctionTarget(score_function=standard_normal_score)
 
     result = solver.run(
         initial,
+        target.score,
         n_steps=60,
         step_size=0.05,
         seed=3,
@@ -112,20 +111,26 @@ def test_knn_interaction_uses_nearest_particles() -> None:
     assert neighborhoods == [(0, 1), (1, 2), (2, 1), (3, 2)]
 
 
-def test_knn_svgd_contracts_with_bound_gaussian_target() -> None:
+def test_knn_svgd_contracts_with_explicit_gaussian_score() -> None:
     initial = np.linspace(-4.0, 4.0, 32, dtype=float).reshape(-1, 1)
-    solver = KNNSVGD(
-        n_neighbors=8,
-        backend="dense",
-        kernel=RBFKernel(bandwidth=1.0),
-        target=GaussianTarget(mean=np.zeros(1), precision=np.eye(1)),
-    )
+    solver = KNNSVGD(n_neighbors=8, backend="dense", kernel=RBFKernel(bandwidth=1.0))
+    target = GaussianTarget(mean=np.zeros(1), std=np.ones(1))
 
     result = solver.run(
         initial,
+        target.score,
         n_steps=60,
         step_size=0.05,
         seed=4,
     )
 
     assert np.mean(result.particles**2) < np.mean(initial**2)
+
+
+def test_gaussian_target_accepts_variance_parameterization() -> None:
+    target = GaussianTarget(mean=np.zeros(2), var=np.array([1.0, 4.0]))
+    particles = np.array([[1.0, 2.0], [-1.0, -2.0]], dtype=float)
+
+    scores = target.score(particles)
+
+    np.testing.assert_allclose(scores, np.array([[-1.0, -0.5], [1.0, 0.5]]))
