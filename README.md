@@ -1,5 +1,7 @@
 # fast-svgd
 
+[![GitHub stars](https://img.shields.io/github/stars/tkgdayo/fast-svgd?style=social)](https://github.com/tkgdayo/fast-svgd/stargazers)
+
 `fast-svgd` is a small, composable Python package for Stein variational particle methods.
 It starts from vanilla SVGD and adds two fast/stable variants out of the box:
 
@@ -9,6 +11,14 @@ It starts from vanilla SVGD and adds two fast/stable variants out of the box:
 The package is organized around reusable building blocks so we can grow into matrix-valued kernels and Newton-style methods without rewriting the core solver.
 
 ## Install
+
+Today:
+
+```bash
+pip install git+https://github.com/tkgdayo/fast-svgd.git
+```
+
+After publishing to PyPI:
 
 ```bash
 pip install fast-svgd
@@ -44,6 +54,51 @@ result = solver.run(
 
 print(result.particles.mean())
 print(result.particles.var())
+```
+
+## Benchmark
+
+The table below is a small reproducible benchmark on a 1D standard normal target,
+using the exact code in `scripts/benchmark_readme.py`.
+
+Setup:
+
+- target distribution: `N(0, 1)`
+- particles: `256`
+- initialization: `Uniform(-2, 2)`
+- steps: `250`
+- step size: `0.03`
+- seeds: `0..4`
+- environment used for the measurements below: `Darwin arm64`, `Python 3.13.11`
+
+This is meant as a README-level sanity check, not a full scientific benchmark.
+Wall-clock numbers will vary slightly by machine and current load.
+
+| Method | Per-step cost | Final mean | Final variance | Mean wall time (s) |
+| --- | --- | ---: | ---: | ---: |
+| `SVGD` | `O(N^2 d)` | `0.011` | `0.909` | `0.223` |
+| `RandomBatchSVGD` (`batch_size=32`) | `O(N B d)` | `0.007` | `0.724` | `0.114` |
+| `SPOS` (`temperature=0.01`) | `O(N^2 d) + O(N d)` | `0.008` | `1.023` | `0.231` |
+
+For this very simple target, all three methods remain stable. `RandomBatchSVGD`
+is the cheapest at this particle count, while `SPOS` lands closest to the target
+variance under the same update budget.
+
+The same benchmark also shows the expected scaling behavior as particle count grows:
+
+| Particles | `SVGD` time (s) | `RandomBatchSVGD` time (s) | `SPOS` time (s) |
+| ---: | ---: | ---: | ---: |
+| `128` | `0.060` | `0.061` | `0.066` |
+| `256` | `0.228` | `0.113` | `0.213` |
+| `512` | `0.909` | `0.221` | `0.914` |
+
+At `512` particles, `RandomBatchSVGD` is about `4.1x` faster than full-batch
+`SVGD` in this implementation.
+
+To reproduce these numbers:
+
+```bash
+python scripts/benchmark_readme.py
 ```
 
 ## API Design
@@ -136,3 +191,6 @@ Build a wheel and source distribution:
 python -m build
 ```
 
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=tkgdayo/fast-svgd&type=Date)](https://star-history.com/#tkgdayo/fast-svgd&Date)
